@@ -58,7 +58,6 @@ var tagsMap = {
 
 /* GET home page. */
 router.get('/', function(req, res, next) {
-    getHighestRankedTag('5Zgjrvr8SgVU8RlUNuLMOrMFHPm2');
     res.render('index', { title: 'Hwoosh' });
 });
 
@@ -100,7 +99,6 @@ router.post('/users/tags', function(req, res, next) {
     }
 
     for (var i=0; i<types.length;i++) {
-        console.log(types[i]);
         var typesRef = firebase.database().ref().child("types/"+types[i]);
         typesRef.once('value', function(snapshot) {
             var tag = snapshot.val();
@@ -135,7 +133,6 @@ router.post('/places', function(req, res, next) {
             getUser(user_id, latlong).then(function(user) {
                 performSearch(user_id, user, query, 'all')
                     .then(function(payload) {
-                        console.log('here' + payload);
                         res.json({ payload: payload });
                     })
                     .catch(function(error) {
@@ -253,7 +250,6 @@ function parsePlaces(payload, user_id)
         getUserTags(user_id)
         .then(function(result) {
             tags = result;
-            console.log(tags);
             var places = [];
             for (var i=0;i<payload.results.length;i++) {
                 score = 0;
@@ -277,7 +273,6 @@ function parsePlaces(payload, user_id)
                 };
                 places.push(place);
             }
-            console.log(places);
             resolve(places);
         });   
     }); 
@@ -373,10 +368,7 @@ function getLatLong(zip_code)
 
 function updateUserTags(user_id, types)
 {
-    console.log(types);
-    console.log(user_id);
     for (var i=0; i<types.length;i++) {
-        console.log(types[i]);
         var typesRef = firebase.database().ref().child("types/"+types[i]);
         typesRef.once('value', function(snapshot) {
             var tag = snapshot.val();
