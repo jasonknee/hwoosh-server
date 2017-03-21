@@ -11,8 +11,8 @@ var Promise = require('promise');
 // ************
 
 
-var google_places_key = 'AIzaSyCmG8RNio1hj7OLfAkGRYs3pefVu5U2eb4';
-var zip_api_key = 'OKps6n5Q5fbeD9nqEdWqYGSryy1bWhfL2Ed82jZ8yambjKCXYyoWegoNOpZLHfxJ';
+var google_places_key = 'AIzaSyAUWFmoycJTKUoabKoDo_l6ZiEdn0eGM8k';
+var zip_api_key = 'dFLqxcEEbMLLqGSyk1rfWgXmypjCs0xGGj6dvKRHwDtWkmvEoXUkeRHMg0oJ1WpH';
 
 var activities = {
     all: [''],
