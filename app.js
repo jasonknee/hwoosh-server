@@ -44,6 +44,9 @@ app.use(function(err, req, res, next) {
   res.render('error');
 });
 
+app.use(bodyParser.json()); // support json encoded bodies
+app.use(bodyParser.urlencoded({ extended: true }))
+
 var config = {
     apiKey: "AIzaSyBHXVC93BSkIvR3WlyQmvGbyfedHXtfmgs",
     authDomain: "hwoohs.firebaseapp.com",

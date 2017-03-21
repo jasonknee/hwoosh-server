@@ -2,27 +2,69 @@ var express = require('express');
 var router = express.Router();
 var firebase = require('firebase');
 var request = require('request');
+var bodyParser = require('body-parser');
+
 var Promise = require('promise');
 
-var google_places_key = 'AIzaSyAtTEX9hZNXpY5ySqbgMGMeV4glD6zWYFs';
+// ************
+// Constants
+// ************
+
+
+var google_places_key = 'AIzaSyCmG8RNio1hj7OLfAkGRYs3pefVu5U2eb4';
 var zip_api_key = 'OKps6n5Q5fbeD9nqEdWqYGSryy1bWhfL2Ed82jZ8yambjKCXYyoWegoNOpZLHfxJ';
 
 var activities = {
+    all: [''],
     adventure: ['campground'],
     athletic: ['park', 'stadium'],
     casual: ['shopping_mall', 'restaurant', 'book_store', 'cafe', 'library', 'park'],
     amusement: ['amusement_park', 'bowling_alley', 'zoo'],
     entertainment: ['art_gallery', 'aquarium', 'museum', 'movie_theater'],
-    foodie: ['bakery', 'cafe', 'restaurant'],
+    foodie: ['bakery', 'cafe', 'restaurant', 'food'],
     retreat: ['spa'],
     traveler: ['point_of_interest'],
     nightlife: ['bar', 'casino', 'night_club']
 };
 
+var tagsMap = {
+    "amusement_park" : "amusement",
+    "aquarium" : "entertainment",
+    "art_gallery" : "entertainment",
+    "bakery" : "foodie",
+    "bar" : "nightlife",
+    "book_store" : "casual",
+    "bowling_alley" : "amusement",
+    "cafe" : "foodie",
+    "campground" : "adventure",
+    "casino" : "nightlife",
+    "food" : "foodie",
+    "library" : "casual",
+    "movie_theater" : "entertainment",
+    "museum" : "entertainment",
+    "night_club" : "nightlife",
+    "park" : "athletic",
+    "point_of_interest" : "traveler",
+    "restaurant" : "foodie",
+    "shopping_mall" : "casual",
+    "spa" : "retreat",
+    "stadium" : "athletic",
+    "zoo" : "amusement"
+};
+
+// ************
+// Views
+// ************
+
 /* GET home page. */
 router.get('/', function(req, res, next) {
+    getHighestRankedTag('5Zgjrvr8SgVU8RlUNuLMOrMFHPm2');
     res.render('index', { title: 'Hwoosh' });
 });
+
+// ************
+// API
+// ************
 
 /* GET users. */
 router.get('/users', function(req, res, next) {
@@ -32,41 +74,6 @@ router.get('/users', function(req, res, next) {
     ref.once('value').then(function(snapshot) {
         res.json(snapshot.val());
     });
-});
-
-/* GET places. */
-router.get('/places/:user_id/:query', function(req, res, next) {
-    var user_id = req.params.user_id;
-    var query = req.params.query;
-
-    getUser(user_id)
-        .then(function(user) {
-            performSearch(user, query)
-                .then(function(payload) {
-                    res.json({ payload: payload });
-                })
-                .catch(function(error) {
-                    res.json(error);
-                });
-        });
-
-    function performSearch(user, query) {
-        var promises = [];
-        for (var i=0; i<activities[user.tag].length; i++) {
-            promises.push(getPlacesOfType(activities[user.tag][i], query));
-        }
-
-        return new Promise(function(resolve, reject) {
-            Promise.all(promises)
-                .then(function(results) {
-                    var placesPayload = [].concat.apply([], results);
-                    resolve(placesPayload);
-                })
-                .catch(function(error) {
-                    reject(error);
-                });
-            })
-        }
 });
 
 /* Confirm zipcode */
@@ -83,45 +90,153 @@ router.get('/zip/:zip_code', function(req, res, next) {
     });
 })
 
+router.post('/users/tags', function(req, res, next) {
+    var types = [];
+    types.push(req.body.types);
+    var user_id = req.body.user_id;
+
+    if (types === undefined || user_id === undefined) {
+        res.json({error_code: 400, error_msg: "Please input valid query and user."});
+    }
+
+    for (var i=0; i<types.length;i++) {
+        console.log(types[i]);
+        var typesRef = firebase.database().ref().child("types/"+types[i]);
+        typesRef.once('value', function(snapshot) {
+            var tag = snapshot.val();
+            var userRef = firebase.database().ref().child("users/"+user_id+ '/Tags/'+tag);
+                userRef.once('value', function(snapshot) {
+                    if (snapshot.val() === null) {
+                        var tagObject = {
+                            name: tag,
+                            views: 1
+                        };
+                        firebase.database().ref('users/'+user_id+'/Tags/'+tag).set(tagObject);
+                    } else {
+                        snapshot.ref.update({'views': snapshot.val().views + 1})
+                    }
+                    res.json({status: 200, msg: 'Successfully updated user tags!'});
+                });
+        });
+    }
+})
+
+/* GET places. */
+router.post('/places', function(req, res, next) {
+    var user_id = req.body.user_id;
+    var query = req.body.query;
+    var latlong = req.body.latlong;
+
+    if (query === undefined || user_id === undefined) {
+        res.json({error_code: 400, error_msg: "Please input valid query and user."});
+    }
+
+    else {
+            getUser(user_id, latlong).then(function(user) {
+                performSearch(user_id, user, query, 'all')
+                    .then(function(payload) {
+                        console.log('here' + payload);
+                        res.json({ payload: payload });
+                    })
+                    .catch(function(error) {
+                        res.json(error);
+                    });
+                // performSearch(user, query, user.tag)
+                //     .then(function(payload) {
+                //         console.log(payload.length);
+                //         if (payload.length > 3) {
+                //             res.json({ payload: payload });
+                //             return
+                //         } else {
+                //             performSearch(user, query, 'all')
+                //                 .then(function(payload) {
+                //                     console.log('here' + payload);
+                //                     res.json({ payload: payload });
+                //                 })
+                //                 .catch(function(error) {
+                //                     res.json(error);
+                //                 });
+                //         }
+                //     })
+                //     .catch(function(error) {
+                //         res.json(error);
+                //     });
+            });
+    }
+});
+
+router.post('/place', function(req, res, next) {
+    var place_id = req.body.place_id;
+    var user_id = req.body.user_id;
+
+    if (place_id === undefined || user_id === undefined) {
+        res.json({error_code: 400, error_msg: "Please input valid query and user."});
+    } else {
+
+        getPlaceDetails(place_id).then(function(payload) {
+            res.json(payload);
+            updateUserTags(user_id, payload.types);
+        });
+    }
+
+});
+
 module.exports = router;
 
-function parsePlaces(payload)
+// ************
+// Internal Methods
+// ************
+
+function performSearch(user_id, user, query, tag) 
 {
-    var places = [];
-    for (var i=0;i<payload.results.length;i++) {
-        var place = {
-            icon: payload.results[i].icon,
-            name: payload.results[i].name,
-            rating: payload.results[i].rating,
-            types: payload.results[i].types,
-            address: payload.results[i].vicinity
-        };
-        places.push(place);
+    var promises = [];
+    for (var i=0; i<activities[tag].length; i++) {
+        promises.push(getPlacesOfType(activities[tag][i], query, user, user_id));
     }
-    return places;
+    return new Promise(function(resolve, reject) {
+        Promise.all(promises)
+            .then(function(results) {
+                var placesPayload = [].concat.apply([], results);
+                var sortedByRating = sortByKey(placesPayload, 'rating');
+                var sortedByScore = sortByKey(placesPayload, 'score');
+                var sortedUnique = removeDuplicates(sortedByScore, "name");
+                resolve(sortedUnique.reverse());
+            })
+            .catch(function(error) {
+                reject(error);
+            });
+        })
 }
 
-function getPlacesOfType(type, query)
+function getPlacesOfType(type, query, user, user_id)
 {
     var latitude = '33.7104';
     var longitude = '-117.9513';
     var minprice = '0';
     var maxprice = '4';
 
-    var url = 'https://maps.googleapis.com/maps/api/place/nearbysearch/json?' + 
+    if (user.budget === 0) {
+        maxprice = '2';
+    }
+    if (user.budget === 1) {
+        maxprice = '3';
+    }
+
+    var url = 'https://maps.googleapis.com/maps/api/place/textsearch/json?' + 
                 'key=' + google_places_key + 
                 '&location=' + latitude + ',' + longitude +
                 '&radius=10000' + 
                 '&rankby=prominence' + 
                 '&type=' + type +
-                '&keyword=' + query;
+                '&query=' + query;
 
     return new Promise(function(resolve, reject) {
         request(url, function (error, response, payload) {
         if (!error && response.statusCode == 200) {
-            console.log(payload);
-            placesData = parsePlaces(JSON.parse(payload));
-            resolve(placesData);
+            parsePlaces(JSON.parse(payload), user_id)
+                .then(function(result) {
+                    resolve(result);
+                });
         } else {
             reject(error);
         }
@@ -129,29 +244,112 @@ function getPlacesOfType(type, query)
     });
 }
 
-function getUser(user_id)
+
+function parsePlaces(payload, user_id)
 {
-    var ref = firebase.database().ref().child("users/"+user_id);
+    var tags;
+    var score;
     return new Promise(function(resolve, reject) {
-        ref.once("value", function(snapshot){
-            var user = {
-                tag: snapshot.val().Toptag,
-                latlong: snapshot.val().Latitude + ',' + snapshot.val().Longitude,
-                budget: snapshot.val().Budget
-            };
-            resolve(user);
-            // getLatLong(snapshot.val().Zipcode)
-            //     .then(function(payload) { 
-            //         console.log(payload);
-            //         latlong = payload;
-            //         var user = {
-            //             tag: snapshot.val().Toptag,
-            //             latlong: latlong,
-            //             budget: snapshot.val().Budget
-            //         };
-            //         console.log(user);
-            //         resolve(user);
-            // });
+        getUserTags(user_id)
+        .then(function(result) {
+            tags = result;
+            console.log(tags);
+            var places = [];
+            for (var i=0;i<payload.results.length;i++) {
+                score = 0;
+                for (var j=0; j < payload.results[i].types.length; j++) {
+                    if (tagsMap[payload.results[i].types[j]] !== undefined) {
+                        var tag = tagsMap[payload.results[i].types[j]];
+                        if (tags[tag] !== undefined) {
+                            score = score + tags[tag].views;
+                        }
+                    }
+                }
+
+                var place = {
+                    icon: payload.results[i].icon,
+                    name: payload.results[i].name,
+                    rating: payload.results[i].rating !== undefined ? payload.results[i].rating : 1,
+                    types: payload.results[i].types,
+                    address: payload.results[i].formatted_address,
+                    place_id: payload.results[i].place_id,
+                    score: score
+                };
+                places.push(place);
+            }
+            console.log(places);
+            resolve(places);
+        });   
+    }); 
+}
+
+function getUserTags(user_id)
+{
+    var ref = firebase.database().ref().child("users/" + user_id + '/Tags');
+    return new Promise(function(resolve, reject) {
+        ref.once("value", function(snapshot) {
+            var tags = snapshot.val();
+            if (tags !== undefined) {
+                resolve(tags);
+            } else {
+                reject({error: 400, error_msg: 'Issue with firebase get Top Tag Query'});
+            }
+        });
+    })
+}
+
+function getPlaceDetails(place_id)
+{
+    var url = 'https://maps.googleapis.com/maps/api/place/details/json?' + 
+                'key=' + google_places_key +
+                '&place_id=' + place_id;
+
+    return new Promise(function(resolve, reject) {
+        request(url, function (error, response, payload) {
+            if (!error && response.statusCode == 200) {
+                placesData = JSON.parse(payload);
+                resolve(placesData.result);
+            } else {
+                reject(error);
+            }
+        });
+    });
+}
+
+function getUser(user_id, latlong)
+{
+    var latLong = latlong;
+    var ref = firebase.database().ref().child("users/"+user_id);
+
+    return new Promise(function(resolve, reject) {
+        getTag(user_id)
+            .then(function(tag) {
+                ref.once("value", function(snapshot){
+                    var user = {
+                        tag: tag,
+                        latlong: latLong !== undefined ? latLong : snapshot.val().Latitude + ',' + snapshot.val().Longitude,
+                        budget: snapshot.val().Budget
+                    };
+                    resolve(user);
+                });   
+            })
+            .catch(function(error) {
+                reject(error)
+            })
+    })
+}
+
+function getTag(user_id)
+{
+    var ref = firebase.database().ref().child("users/" + user_id + '/Tags');
+    return new Promise(function(resolve, reject) {
+        ref.orderByChild('views').limitToLast(1).once("value", function(snapshot) {
+            var tag = Object.keys(snapshot.val())[0];
+            if (tag !== undefined) {
+                resolve(tag);
+            } else {
+                reject({error: 400, error_msg: 'Issue with firebase get Top Tag Query'});
+            }
         });
     })
 }
@@ -172,3 +370,53 @@ function getLatLong(zip_code)
         });
     })
 }
+
+function updateUserTags(user_id, types)
+{
+    console.log(types);
+    console.log(user_id);
+    for (var i=0; i<types.length;i++) {
+        console.log(types[i]);
+        var typesRef = firebase.database().ref().child("types/"+types[i]);
+        typesRef.once('value', function(snapshot) {
+            var tag = snapshot.val();
+            if (tag !== null) {
+                var userRef = firebase.database().ref().child("users/"+user_id+ '/Tags/'+tag);
+                    userRef.once('value', function(snapshot) {
+                        if (snapshot.val() === null) {
+                            var tagObject = {
+                                name: tag,
+                                views: 1
+                            };
+                            firebase.database().ref('users/'+user_id+'/Tags/'+tag).set(tagObject);
+                        } else {
+                            snapshot.ref.update({'views': snapshot.val().views + 1})
+                        }
+                        return({status: 200, msg: 'Successfully updated user tags!'});
+                    });
+            }
+        });
+    }
+}
+
+function sortByKey(array, key) {
+    return array.sort(function(a, b) {
+        var x = a[key]; var y = b[key];
+        return ((x < y) ? -1 : ((x > y) ? 1 : 0));
+    });
+}
+
+function removeDuplicates(arr, prop) {
+     var new_arr = [];
+     var lookup  = {};
+ 
+     for (var i in arr) {
+         lookup[arr[i][prop]] = arr[i];
+     }
+ 
+     for (i in lookup) {
+         new_arr.push(lookup[i]);
+     }
+ 
+     return new_arr;
+ }
