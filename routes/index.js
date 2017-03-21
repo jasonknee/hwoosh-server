@@ -171,7 +171,7 @@ router.post('/place', function(req, res, next) {
     } else {
 
         getPlaceDetails(place_id).then(function(payload) {
-            res.json(payload);
+            res.json({ payload: payload });
             updateUserTags(user_id, payload.types);
         });
     }
